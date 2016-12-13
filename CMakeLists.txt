@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 2.8.11)
+﻿cmake_minimum_required(VERSION 2.8.11)
 project(open62541)
 # set(CMAKE_VERBOSE_MAKEFILE ON)
 
@@ -183,6 +183,7 @@ set(exported_headers ${PROJECT_BINARY_DIR}/src_generated/ua_config.h
                      ${PROJECT_SOURCE_DIR}/include/ua_server_external_ns.h
                      ${PROJECT_SOURCE_DIR}/include/ua_client.h
                      ${PROJECT_SOURCE_DIR}/include/ua_client_highlevel.h
+                     ${PROJECT_SOURCE_DIR}/include/ua_client_highlevel_extra.h
                      ${PROJECT_SOURCE_DIR}/plugins/ua_network_tcp.h
                      ${PROJECT_SOURCE_DIR}/plugins/ua_log_stdout.h
                      ${PROJECT_SOURCE_DIR}/plugins/ua_config_standard.h)
@@ -239,6 +240,7 @@ set(lib_sources ${PROJECT_SOURCE_DIR}/src/ua_types.c
                 ${PROJECT_SOURCE_DIR}/src/client/ua_client.c
                 ${PROJECT_SOURCE_DIR}/src/client/ua_client_highlevel.c
                 ${PROJECT_SOURCE_DIR}/src/client/ua_client_highlevel_subscriptions.c
+                ${PROJECT_SOURCE_DIR}/src/client/ua_client_highlevel_subscriptions_extra.c
                 # plugins and dependencies
                 ${PROJECT_SOURCE_DIR}/plugins/ua_network_tcp.c
                 ${PROJECT_SOURCE_DIR}/plugins/ua_clock.c

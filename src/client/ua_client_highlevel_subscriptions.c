@@ -260,19 +260,23 @@ UA_Client_processPublishResponse(UA_Client *client, UA_PublishRequest *request,
             continue;
 
         UA_DataChangeNotification *dataChangeNotification = msg->notificationData[k].content.decoded.data;
-        for(size_t j = 0; j < dataChangeNotification->monitoredItemsSize; ++j) {
-            UA_MonitoredItemNotification *mitemNot = &dataChangeNotification->monitoredItems[j];
-            UA_Client_MonitoredItem *mon;
-            LIST_FOREACH(mon, &sub->MonitoredItems, listEntry) {
-                if(mon->ClientHandle == mitemNot->clientHandle) {
-                    mon->handler(mon->MonitoredItemId, &mitemNot->value, mon->handlerContext);
-                    break;
-                }
-            }
-            if(!mon)
-                UA_LOG_DEBUG(client->config.logger, UA_LOGCATEGORY_CLIENT,
-                             "Could not process a notification with clienthandle %u on subscription %u",
-                             mitemNot->clientHandle, sub->SubscriptionID);
+        if (sub->subcriptionHandler) {
+            sub->subcriptionHandler(sub->SubscriptionID, dataChangeNotification, sub->subscriptionHandlerContext);
+        } else {
+			for(size_t j = 0; j < dataChangeNotification->monitoredItemsSize; ++j) {
+				UA_MonitoredItemNotification *mitemNot = &dataChangeNotification->monitoredItems[j];
+				UA_Client_MonitoredItem *mon;
+				LIST_FOREACH(mon, &sub->MonitoredItems, listEntry) {
+					if(mon->ClientHandle == mitemNot->clientHandle) {
+						mon->handler(mon->MonitoredItemId, &mitemNot->value, mon->handlerContext);
+						break;
+					}
+				}
+				if(!mon)
+					UA_LOG_DEBUG(client->config.logger, UA_LOGCATEGORY_CLIENT,
+								 "Could not process a notification with clienthandle %u on subscription %u",
+								 mitemNot->clientHandle, sub->SubscriptionID);
+			}
         }
     }
 
