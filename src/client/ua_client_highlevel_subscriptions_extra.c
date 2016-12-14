@@ -59,7 +59,7 @@ UA_StatusCode UA_Client_Subscriptions_GetSetting(UA_Client *client, UA_UInt32 su
             setting_out->requestedLifetimeCount = sub->LifeTime;
             setting_out->requestedMaxKeepAliveCount = sub->KeepAliveCount;
             setting_out->maxNotificationsPerPublish = sub->NotificationsPerPublish;
-            setting_out->priority = sub->Priority;
+            setting_out->priority = (UA_Byte)sub->Priority;
             return UA_STATUSCODE_GOOD;
         }
     }
@@ -256,7 +256,7 @@ bool isHaveSubscription(UA_Client* client)
 
 bool clearSubscription(UA_Client* client)
 {
-    int count = 0;
+    size_t count = 0;
     UA_Client_Subscription *sub;
     LIST_FOREACH(sub, &client->subscriptions, listEntry) {
         count++;
@@ -264,12 +264,12 @@ bool clearSubscription(UA_Client* client)
     if (count <= 0) {
         return true;
     }
-    int i = 0;
+    size_t i = 0;
     UA_UInt32* subScriptions = (UA_UInt32*)UA_Array_new(count, &UA_TYPES[UA_TYPES_UINT32]);
     LIST_FOREACH(sub, &client->subscriptions, listEntry) {
         subScriptions[i++] = sub->SubscriptionID;
     }
-    for (int i = 0; i < count; i++) {
+    for (i = 0; i < count; i++) {
         UA_Client_Subscriptions_remove(client, subScriptions[i]);
     }
     UA_Array_delete(subScriptions, count, &UA_TYPES[UA_TYPES_UINT32]);
