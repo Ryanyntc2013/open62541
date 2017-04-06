@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "ua_server_internal.h"
 
 /**********************/
@@ -22,7 +26,7 @@ readDimension(UA_Byte *buf, size_t buflen, UA_NumericRangeDimension *dim) {
     /* invalid range */
     if(dim->min >= dim->max)
         return 0;
-    
+
     return progress + progress2;
 }
 
@@ -38,7 +42,7 @@ parse_numericrange(const UA_String *str, UA_NumericRange *range) {
         if(idx >= dimensionsMax) {
             UA_NumericRangeDimension *newds;
             size_t newdssize = sizeof(UA_NumericRangeDimension) * (dimensionsMax + 2);
-            newds = UA_realloc(dimensions, newdssize);
+            newds = (UA_NumericRangeDimension*)UA_realloc(dimensions, newdssize);
             if(!newds) {
                 retval = UA_STATUSCODE_BADOUTOFMEMORY;
                 break;
@@ -85,7 +89,7 @@ UA_StatusCode
 getTypeHierarchy(UA_NodeStore *ns, const UA_Node *rootRef, UA_Boolean inverse,
                  UA_NodeId **typeHierarchy, size_t *typeHierarchySize) {
     size_t results_size = 20; // probably too big, but saves mallocs
-    UA_NodeId *results = UA_malloc(sizeof(UA_NodeId) * results_size);
+    UA_NodeId *results = (UA_NodeId*)UA_malloc(sizeof(UA_NodeId) * results_size);
     if(!results)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
@@ -119,14 +123,14 @@ getTypeHierarchy(UA_NodeStore *ns, const UA_Node *rootRef, UA_Boolean inverse,
 
             /* increase array length if necessary */
             if(last + 1 >= results_size) {
-                                UA_NodeId *new_results =
-                                    UA_realloc(results, sizeof(UA_NodeId) * results_size * 2);
-                                if(!new_results) {
-                                    retval = UA_STATUSCODE_BADOUTOFMEMORY;
-                                    break;
-                                }
-                                results = new_results;
-                                results_size *= 2;
+                UA_NodeId *new_results =
+                    (UA_NodeId*)UA_realloc(results, sizeof(UA_NodeId) * results_size * 2);
+                if(!new_results) {
+                    retval = UA_STATUSCODE_BADOUTOFMEMORY;
+                    break;
+                }
+                results = new_results;
+                results_size *= 2;
             }
 
             /* copy new nodeid to the end of the list */
@@ -155,7 +159,6 @@ getTypeHierarchy(UA_NodeStore *ns, const UA_Node *rootRef, UA_Boolean inverse,
     return UA_STATUSCODE_GOOD;
 }
 
-/* Recursively searches "upwards" in the tree following specific reference types */
 UA_Boolean
 isNodeInTree(UA_NodeStore *ns, const UA_NodeId *leafNode, const UA_NodeId *nodeToFind,
              const UA_NodeId *referenceTypeIds, size_t referenceTypeIdsSize) {
@@ -182,54 +185,62 @@ isNodeInTree(UA_NodeStore *ns, const UA_NodeId *leafNode, const UA_NodeId *nodeT
     return false;
 }
 
-const UA_Node *
-getNodeType(UA_Server *server, const UA_Node *node) {
-    /* The reference to the parent is different for variable and variabletype */ 
+void getNodeType(UA_Server *server, const UA_Node *node, UA_NodeId *typeId) {
+    UA_NodeId_init(typeId);
     UA_NodeId parentRef;
     UA_Boolean inverse;
+
+    /* The reference to the parent is different for variable and variabletype */
     if(node->nodeClass == UA_NODECLASS_VARIABLE ||
        node->nodeClass == UA_NODECLASS_OBJECT) {
         parentRef = UA_NODEID_NUMERIC(0, UA_NS0ID_HASTYPEDEFINITION);
         inverse = false;
     } else if(node->nodeClass == UA_NODECLASS_VARIABLETYPE ||
-              /* node->nodeClass == UA_NODECLASS_OBJECTTYPE || // objecttype may have multiple parents */
+              node->nodeClass == UA_NODECLASS_OBJECTTYPE ||
               node->nodeClass == UA_NODECLASS_REFERENCETYPE ||
               node->nodeClass == UA_NODECLASS_DATATYPE) {
         parentRef = UA_NODEID_NUMERIC(0, UA_NS0ID_HASSUBTYPE);
         inverse = true;
     } else {
-        return NULL;
+        return;
     }
 
-    /* stop at the first matching candidate */
-    UA_NodeId *parentId = NULL;
+    /* Stop at the first matching candidate */
     for(size_t i = 0; i < node->referencesSize; ++i) {
         if(node->references[i].isInverse == inverse &&
            UA_NodeId_equal(&node->references[i].referenceTypeId, &parentRef)) {
-            parentId = &node->references[i].targetId.nodeId;
+            UA_NodeId_copy(&node->references[i].targetId.nodeId, typeId);
             break;
         }
     }
-
-    if(!parentId)
-        return NULL;
-    return UA_NodeStore_get(server->nodestore, parentId);
 }
 
 const UA_VariableTypeNode *
 getVariableNodeType(UA_Server *server, const UA_VariableNode *node) {
-    const UA_Node *type = getNodeType(server, (const UA_Node*)node);
-    if(!type || type->nodeClass != UA_NODECLASS_VARIABLETYPE)
-        return NULL;
-    return (const UA_VariableTypeNode*)type;
+    UA_NodeId vtId;
+    getNodeType(server, (const UA_Node*)node, &vtId);
+
+    const UA_Node *vt = UA_NodeStore_get(server->nodestore, &vtId);
+    if(!vt || vt->nodeClass != UA_NODECLASS_VARIABLETYPE) {
+        vt = NULL;
+        UA_LOG_DEBUG(server->config.logger, UA_LOGCATEGORY_SERVER,
+                     "No VariableType for the node found");
+    }
+    return (const UA_VariableTypeNode*)vt;
 }
 
 const UA_ObjectTypeNode *
 getObjectNodeType(UA_Server *server, const UA_ObjectNode *node) {
-    const UA_Node *type = getNodeType(server, (const UA_Node*)node);
-    if(type->nodeClass != UA_NODECLASS_OBJECTTYPE)
-        return NULL;
-    return (const UA_ObjectTypeNode*)type;
+    UA_NodeId otId;
+    getNodeType(server, (const UA_Node*)node, &otId);
+
+    const UA_Node *ot = UA_NodeStore_get(server->nodestore, &otId);
+    if(!ot || ot->nodeClass != UA_NODECLASS_OBJECTTYPE) {
+        ot = NULL;
+        UA_LOG_DEBUG(server->config.logger, UA_LOGCATEGORY_SERVER,
+                     "No ObjectType for the node found");
+    }
+    return (const UA_ObjectTypeNode*)ot;
 }
 
 UA_Boolean
@@ -253,16 +264,15 @@ UA_StatusCode
 UA_Server_editNode(UA_Server *server, UA_Session *session,
                    const UA_NodeId *nodeId, UA_EditNodeCallback callback,
                    const void *data) {
+#ifndef UA_ENABLE_MULTITHREADING
+    const UA_Node *node = UA_NodeStore_get(server->nodestore, nodeId);
+    if(!node)
+        return UA_STATUSCODE_BADNODEIDUNKNOWN;
+    UA_Node *editNode = (UA_Node*)(uintptr_t)node; // dirty cast
+    return callback(server, session, editNode, data);
+#else
     UA_StatusCode retval;
     do {
-#ifndef UA_ENABLE_MULTITHREADING
-        const UA_Node *node = UA_NodeStore_get(server->nodestore, nodeId);
-        if(!node)
-            return UA_STATUSCODE_BADNODEIDUNKNOWN;
-        UA_Node *editNode = (UA_Node*)(uintptr_t)node; // dirty cast
-        retval = callback(server, session, editNode, data);
-        return retval;
-#else
         UA_Node *copy = UA_NodeStore_getCopy(server->nodestore, nodeId);
         if(!copy)
             return UA_STATUSCODE_BADOUTOFMEMORY;
@@ -272,7 +282,7 @@ UA_Server_editNode(UA_Server *server, UA_Session *session,
             return retval;
         }
         retval = UA_NodeStore_replace(server->nodestore, copy);
-#endif
     } while(retval != UA_STATUSCODE_GOOD);
     return UA_STATUSCODE_GOOD;
+#endif
 }

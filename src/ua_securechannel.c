@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "ua_util.h"
 #include "ua_securechannel.h"
 #include "ua_session.h"
@@ -11,8 +15,9 @@
 
 void UA_SecureChannel_init(UA_SecureChannel *channel) {
     memset(channel, 0, sizeof(UA_SecureChannel));
-    LIST_INIT(&channel->sessions);
-    LIST_INIT(&channel->chunks);
+    /* Linked lists are also initialized by zeroing out */
+    /* LIST_INIT(&channel->sessions); */
+    /* LIST_INIT(&channel->chunks); */
 }
 
 void UA_SecureChannel_deleteMembersCleanup(UA_SecureChannel *channel) {
@@ -48,7 +53,7 @@ void UA_SecureChannel_deleteMembersCleanup(UA_SecureChannel *channel) {
 
 //TODO implement real nonce generator - DUMMY function
 UA_StatusCode UA_SecureChannel_generateNonce(UA_ByteString *nonce) {
-    if(!(nonce->data = UA_malloc(1)))
+    if(!(nonce->data = (UA_Byte *)UA_malloc(1)))
         return UA_STATUSCODE_BADOUTOFMEMORY;
     nonce->length  = 1;
     nonce->data[0] = 'a';
@@ -63,7 +68,7 @@ UA_StatusCode UA_SecureChannel_generateNonce(UA_ByteString *nonce) {
 #endif
 
 void UA_SecureChannel_attachSession(UA_SecureChannel *channel, UA_Session *session) {
-    struct SessionEntry *se = UA_malloc(sizeof(struct SessionEntry));
+    struct SessionEntry *se = (struct SessionEntry *)UA_malloc(sizeof(struct SessionEntry));
     if(!se)
         return;
     se->session = session;
@@ -179,7 +184,9 @@ UA_SecureChannel_sendChunk(UA_ChunkInfo *ci, UA_ByteString *dst, size_t offset) 
             connection->getSendBuffer(connection, connection->localConf.sendBufferSize, dst);
         if(retval != UA_STATUSCODE_GOOD)
             return retval;
-        /* Hide the header of the buffer, so that the ensuing encoding does not overwrite anything */
+        /* Forward the data pointer so that the payload is encoded after the message header.
+         * TODO: This works but is a bit too clever. Instead, we could return an offset to the
+         * binary encoding exchangeBuffer function. */
         dst->data = &dst->data[UA_SECURE_MESSAGE_HEADER_LENGTH];
         dst->length = connection->localConf.sendBufferSize - UA_SECURE_MESSAGE_HEADER_LENGTH;
     }
@@ -263,7 +270,7 @@ UA_SecureChannel_removeChunk(UA_SecureChannel *channel, UA_UInt32 requestId) {
 static void
 appendChunk(struct ChunkEntry *ch, const UA_ByteString *msg,
             size_t offset, size_t chunklength) {
-    UA_Byte* new_bytes = UA_realloc(ch->bytes.data, ch->bytes.length + chunklength);
+    UA_Byte* new_bytes = (UA_Byte *)UA_realloc(ch->bytes.data, ch->bytes.length + chunklength);
     if(!new_bytes) {
         UA_ByteString_deleteMembers(&ch->bytes);
         return;
@@ -293,7 +300,7 @@ UA_SecureChannel_appendChunk(UA_SecureChannel *channel, UA_UInt32 requestId,
 
     /* No chunkentry on the channel, create one */
     if(!ch) {
-        ch = UA_malloc(sizeof(struct ChunkEntry));
+        ch = (struct ChunkEntry *)UA_malloc(sizeof(struct ChunkEntry));
         if(!ch)
             return;
         ch->requestId = requestId;
@@ -354,6 +361,26 @@ UA_SecureChannel_processChunks(UA_SecureChannel *channel, const UA_ByteString *c
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
     size_t offset= 0;
     do {
+
+        if (chunks->length > 3 && chunks->data[offset] == 'E' &&
+                chunks->data[offset+1] == 'R' && chunks->data[offset+2] == 'R') {
+            UA_TcpMessageHeader header;
+            retval = UA_TcpMessageHeader_decodeBinary(chunks, &offset, &header);
+            if(retval != UA_STATUSCODE_GOOD)
+                break;
+
+            UA_TcpErrorMessage errorMessage;
+            retval = UA_TcpErrorMessage_decodeBinary(chunks, &offset, &errorMessage);
+            if(retval != UA_STATUSCODE_GOOD)
+                break;
+
+            // dirty cast to pass errorMessage
+            UA_UInt32 val = 0;
+            callback(application, (UA_SecureChannel *)channel, (UA_MessageType)UA_MESSAGETYPE_ERR,
+                     val, (const UA_ByteString*)&errorMessage);
+            continue;
+        }
+
         /* Store the initial offset to compute the header length */
         size_t initial_offset = offset;
 
@@ -409,7 +436,7 @@ UA_SecureChannel_processChunks(UA_SecureChannel *channel, const UA_ByteString *c
                                                header.messageHeader.messageSize - processed_header,
                                                &realloced);
             if(message.length > 0) {
-                callback(application, channel, header.messageHeader.messageTypeAndChunkType & 0x00ffffff,
+                callback(application,(UA_SecureChannel *)channel,(UA_MessageType)(header.messageHeader.messageTypeAndChunkType & 0x00ffffff),
                          sequenceHeader.requestId, &message);
                 if(realloced)
                     UA_ByteString_deleteMembers(&message);

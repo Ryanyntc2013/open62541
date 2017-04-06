@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "ua_util.h"
 #include "ua_types.h"
 #include "ua_types_generated.h"
@@ -15,11 +19,11 @@
 
 /* Global definition of NULL type instances. These are always zeroed out, as
  * mandated by the C/C++ standard for global values with no initializer. */
-const UA_String UA_STRING_NULL;
-const UA_ByteString UA_BYTESTRING_NULL;
-const UA_Guid UA_GUID_NULL;
-const UA_NodeId UA_NODEID_NULL;
-const UA_ExpandedNodeId UA_EXPANDEDNODEID_NULL;
+const UA_String UA_STRING_NULL = {0, NULL};
+const UA_ByteString UA_BYTESTRING_NULL = {0, NULL};
+const UA_Guid UA_GUID_NULL = {0, 0, 0, {0,0,0,0,0,0,0,0}};
+const UA_NodeId UA_NODEID_NULL = {0, UA_NODEIDTYPE_NUMERIC, {0}};
+const UA_ExpandedNodeId UA_EXPANDEDNODEID_NULL = {{0, UA_NODEIDTYPE_NUMERIC, {0}}, {0, NULL}, 0};
 
 /* TODO: The standard-defined types are ordered. See if binary search is more
  * efficient. */
@@ -52,8 +56,8 @@ UA_UInt32_random(void) {
 /* Builtin Types */
 /*****************/
 
-static void deleteMembers_noInit(void *, const UA_DataType *);
-static UA_StatusCode copy_noInit(const void *, void *, const UA_DataType *);
+static void deleteMembers_noInit(void *p, const UA_DataType *type);
+static UA_StatusCode copy_noInit(const void *src, void *dst, const UA_DataType *type);
 
 UA_String
 UA_String_fromChars(char const src[]) {
@@ -72,11 +76,11 @@ UA_String_fromChars(char const src[]) {
 }
 
 UA_Boolean
-UA_String_equal(const UA_String *string1, const UA_String *string2) {
-    if(string1->length != string2->length)
+UA_String_equal(const UA_String *s1, const UA_String *s2) {
+    if(s1->length != s2->length)
         return false;
-    UA_Int32 is = memcmp((char const*)string1->data,
-                         (char const*)string2->data, string1->length);
+    UA_Int32 is = memcmp((char const*)s1->data,
+                         (char const*)s2->data, s1->length);
     return (is == 0) ? true : false;
 }
 
@@ -270,6 +274,32 @@ UA_NodeId_equal(const UA_NodeId *n1, const UA_NodeId *n2) {
                                    &n2->identifier.byteString);
     }
     return false;
+}
+
+/* FNV non-cryptographic hash function. See
+ * https://en.wikipedia.org/wiki/Fowler%E2%80%93Noll%E2%80%93Vo_hash_function */
+#define FNV_PRIME_32 16777619
+static UA_UInt32
+fnv32(UA_UInt32 fnv, const UA_Byte *buf, size_t size) {
+    for(size_t i = 0; i < size; ++i) {
+        fnv = fnv ^ (buf[i]);
+        fnv = fnv * FNV_PRIME_32;
+    }
+    return fnv;
+}
+
+UA_UInt32
+UA_NodeId_hash(const UA_NodeId *n) {
+    switch(n->identifierType) {
+    case UA_NODEIDTYPE_NUMERIC:
+    default:
+        return (UA_UInt32)(n->namespaceIndex + (n->identifier.numeric * 2654435761)); /*  Knuth's multiplicative hashing */
+    case UA_NODEIDTYPE_STRING:
+    case UA_NODEIDTYPE_BYTESTRING:
+        return fnv32(n->namespaceIndex, n->identifier.string.data, n->identifier.string.length);
+    case UA_NODEIDTYPE_GUID:
+        return fnv32(n->namespaceIndex, (const UA_Byte*)&n->identifier.guid, sizeof(UA_Guid));
+    }
 }
 
 /* ExpandedNodeId */
@@ -510,11 +540,10 @@ copySubString(const UA_String *src, UA_String *dst,
 }
 
 UA_StatusCode
-UA_Variant_copyRange(const UA_Variant *orig_src, UA_Variant *dst,
+UA_Variant_copyRange(const UA_Variant *src, UA_Variant *dst,
                      const UA_NumericRange range) {
-    UA_Boolean isScalar = UA_Variant_isScalar(orig_src);
-    UA_Boolean stringLike = isStringLike(orig_src->type);
-    const UA_Variant *src = orig_src;
+    UA_Boolean isScalar = UA_Variant_isScalar(src);
+    UA_Boolean stringLike = isStringLike(src->type);
     UA_Variant arraySrc;
 
     /* Extract the range for copying at this level. The remaining range is dealt
@@ -564,7 +593,7 @@ UA_Variant_copyRange(const UA_Variant *orig_src, UA_Variant *dst,
     uintptr_t nextsrc = (uintptr_t)src->data + (elem_size * first);
     if(nextrange.dimensionsSize == 0) {
         /* no nextrange */
-        if(src->type->fixedSize) {
+        if(src->type->pointerFree) {
             for(size_t i = 0; i < block_count; ++i) {
                 memcpy((void*)nextdst, (void*)nextsrc, elem_size * block);
                 nextdst += block * elem_size;
@@ -657,7 +686,7 @@ Variant_setRange(UA_Variant *v, void *array, size_t arraySize,
     size_t elem_size = v->type->memSize;
     uintptr_t nextdst = (uintptr_t)v->data + (first * elem_size);
     uintptr_t nextsrc = (uintptr_t)array;
-    if(v->type->fixedSize || !copy) {
+    if(v->type->pointerFree || !copy) {
         for(size_t i = 0; i < block_count; ++i) {
             memcpy((void*)nextdst, (void*)nextsrc, elem_size * block);
             nextsrc += block * elem_size;
@@ -676,7 +705,7 @@ Variant_setRange(UA_Variant *v, void *array, size_t arraySize,
     }
 
     /* If members were moved, initialize original array to prevent reuse */
-    if(!copy && !v->type->fixedSize)
+    if(!copy && !v->type->pointerFree)
         memset(array, 0, sizeof(elem_size)*arraySize);
 
     return retval;
@@ -958,9 +987,9 @@ UA_Array_new(size_t size, const UA_DataType *type) {
 }
 
 UA_StatusCode
-UA_Array_copy(const void *src, size_t src_size,
+UA_Array_copy(const void *src, size_t size,
               void **dst, const UA_DataType *type) {
-    if(src_size == 0) {
+    if(size == 0) {
         if(src == NULL)
             *dst = NULL;
         else
@@ -972,25 +1001,25 @@ UA_Array_copy(const void *src, size_t src_size,
         return UA_STATUSCODE_BADINTERNALERROR;
 
     /* calloc, so we don't have to check retval in every iteration of copying */
-    *dst = UA_calloc(src_size, type->memSize);
+    *dst = UA_calloc(size, type->memSize);
     if(!*dst)
         return UA_STATUSCODE_BADOUTOFMEMORY;
 
-    if(type->fixedSize) {
-        memcpy(*dst, src, type->memSize * src_size);
+    if(type->pointerFree) {
+        memcpy(*dst, src, type->memSize * size);
         return UA_STATUSCODE_GOOD;
     }
 
     uintptr_t ptrs = (uintptr_t)src;
     uintptr_t ptrd = (uintptr_t)*dst;
     UA_StatusCode retval = UA_STATUSCODE_GOOD;
-    for(size_t i = 0; i < src_size; ++i) {
+    for(size_t i = 0; i < size; ++i) {
         retval |= UA_copy((void*)ptrs, (void*)ptrd, type);
         ptrs += type->memSize;
         ptrd += type->memSize;
     }
     if(retval != UA_STATUSCODE_GOOD) {
-        UA_Array_delete(*dst, src_size, type);
+        UA_Array_delete(*dst, size, type);
         *dst = NULL;
     }
     return retval;
@@ -998,7 +1027,7 @@ UA_Array_copy(const void *src, size_t src_size,
 
 void
 UA_Array_delete(void *p, size_t size, const UA_DataType *type) {
-    if(!type->fixedSize) {
+    if(!type->pointerFree) {
         uintptr_t ptr = (uintptr_t)p;
         for(size_t i = 0; i < size; ++i) {
             UA_deleteMembers((void*)ptr, type);

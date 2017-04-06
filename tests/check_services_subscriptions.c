@@ -1,3 +1,7 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #include "ua_server.h"
 #include "server/ua_services.h"
 #include "server/ua_server_internal.h"
@@ -75,15 +79,16 @@ START_TEST(Server_publishCallback) {
     ck_assert(publishingInterval > 0.0f);
     UA_CreateSubscriptionResponse_deleteMembers(&response);
 
-    /* Sleep until the publishing interval times out */
-    usleep((useconds_t)(publishingInterval * 1000) + 1000);
-
     /* Keepalive is set to max initially */
     UA_Subscription *sub;
     LIST_FOREACH(sub, &adminSession.serverSubscriptions, listEntry)
         ck_assert_uint_eq(sub->currentKeepAliveCount, sub->maxKeepAliveCount);
 
+    /* Sleep until the publishing interval times out */
     UA_Server_run_iterate(server, false);
+    usleep((useconds_t)(publishingInterval * 1000) + 1000);
+    UA_Server_run_iterate(server, false);
+    usleep((useconds_t)(publishingInterval * 1000) + 1000);
 
     LIST_FOREACH(sub, &adminSession.serverSubscriptions, listEntry)
         ck_assert_uint_eq(sub->currentKeepAliveCount, sub->maxKeepAliveCount+1);

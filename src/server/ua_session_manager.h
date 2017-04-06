@@ -1,5 +1,13 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
 #ifndef UA_SESSION_MANAGER_H_
 #define UA_SESSION_MANAGER_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 #include "queue.h"
 #include "ua_server.h"
@@ -20,18 +28,22 @@ typedef struct UA_SessionManager {
 UA_StatusCode
 UA_SessionManager_init(UA_SessionManager *sm, UA_Server *server);
 
-void UA_SessionManager_deleteMembers(UA_SessionManager *sessionManager);
+void UA_SessionManager_deleteMembers(UA_SessionManager *sm);
 
-void UA_SessionManager_cleanupTimedOut(UA_SessionManager *sessionManager, UA_DateTime nowMonotonic);
+void UA_SessionManager_cleanupTimedOut(UA_SessionManager *sm, UA_DateTime nowMonotonic);
 
 UA_StatusCode
-UA_SessionManager_createSession(UA_SessionManager *sessionManager, UA_SecureChannel *channel,
+UA_SessionManager_createSession(UA_SessionManager *sm, UA_SecureChannel *channel,
                                 const UA_CreateSessionRequest *request, UA_Session **session);
 
 UA_StatusCode
-UA_SessionManager_removeSession(UA_SessionManager *sessionManager, const UA_NodeId *token);
+UA_SessionManager_removeSession(UA_SessionManager *sm, const UA_NodeId *token);
 
 UA_Session *
-UA_SessionManager_getSession(UA_SessionManager *sessionManager, const UA_NodeId *token);
+UA_SessionManager_getSession(UA_SessionManager *sm, const UA_NodeId *token);
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif /* UA_SESSION_MANAGER_H_ */
