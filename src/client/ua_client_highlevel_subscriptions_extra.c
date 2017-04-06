@@ -27,19 +27,19 @@ UA_StatusCode UA_Client_Subscriptions_new2(UA_Client *client, UA_SubscriptionSet
         goto cleanup;
     }
 
-    LIST_INIT(&newSub->MonitoredItems);
-    newSub->LifeTime = response.revisedLifetimeCount;
-    newSub->KeepAliveCount = response.revisedMaxKeepAliveCount;
-    newSub->PublishingInterval = response.revisedPublishingInterval;
-    newSub->SubscriptionID = response.subscriptionId;
-    newSub->NotificationsPerPublish = request.maxNotificationsPerPublish;
-    newSub->Priority = request.priority;
+    LIST_INIT(&newSub->monitoredItems);
+    newSub->lifeTime = response.revisedLifetimeCount;
+    newSub->keepAliveCount = response.revisedMaxKeepAliveCount;
+    newSub->publishingInterval = response.revisedPublishingInterval;
+    newSub->subscriptionID = response.subscriptionId;
+    newSub->notificationsPerPublish = request.maxNotificationsPerPublish;
+    newSub->priority = request.priority;
     newSub->subcriptionHandler = hander;
     newSub->subscriptionHandlerContext = context;
     LIST_INSERT_HEAD(&client->subscriptions, newSub, listEntry);
 
     if(newSubscriptionId)
-        *newSubscriptionId = newSub->SubscriptionID;
+        *newSubscriptionId = newSub->subscriptionID;
 
  cleanup:
     UA_CreateSubscriptionResponse_deleteMembers(&response);
@@ -54,12 +54,12 @@ UA_StatusCode UA_Client_Subscriptions_GetSetting(UA_Client *client, UA_UInt32 su
     }
     UA_Client_Subscription *sub = NULL;
     LIST_FOREACH(sub, &client->subscriptions, listEntry) {
-        if(sub->SubscriptionID == subscriptionId) {
-            setting_out->requestedPublishingInterval = sub->PublishingInterval;
-            setting_out->requestedLifetimeCount = sub->LifeTime;
-            setting_out->requestedMaxKeepAliveCount = sub->KeepAliveCount;
-            setting_out->maxNotificationsPerPublish = sub->NotificationsPerPublish;
-            setting_out->priority = (UA_Byte)sub->Priority;
+        if(sub->subscriptionID == subscriptionId) {
+            setting_out->requestedPublishingInterval = sub->publishingInterval;
+            setting_out->requestedLifetimeCount = sub->lifeTime;
+            setting_out->requestedMaxKeepAliveCount = sub->keepAliveCount;
+            setting_out->maxNotificationsPerPublish = sub->notificationsPerPublish;
+            setting_out->priority = (UA_Byte)sub->priority;
             return UA_STATUSCODE_GOOD;
         }
     }
@@ -71,7 +71,7 @@ UA_StatusCode UA_Client_Subscriptions_modify(UA_Client *client, UA_UInt32 subscr
 {
     UA_Client_Subscription *sub = NULL;
     LIST_FOREACH(sub, &client->subscriptions, listEntry) {
-        if(sub->SubscriptionID == subscriptionId) {
+        if(sub->subscriptionID == subscriptionId) {
             break;
         }
     }
@@ -93,11 +93,11 @@ UA_StatusCode UA_Client_Subscriptions_modify(UA_Client *client, UA_UInt32 subscr
     if(retval != UA_STATUSCODE_GOOD)
         goto cleanup;
 
-    sub->LifeTime = response.revisedLifetimeCount;
-    sub->KeepAliveCount = response.revisedMaxKeepAliveCount;
-    sub->PublishingInterval = response.revisedPublishingInterval;
-    sub->NotificationsPerPublish = request.maxNotificationsPerPublish;
-    sub->Priority = request.priority;
+    sub->lifeTime = response.revisedLifetimeCount;
+    sub->keepAliveCount = response.revisedMaxKeepAliveCount;
+    sub->publishingInterval = response.revisedPublishingInterval;
+    sub->notificationsPerPublish = request.maxNotificationsPerPublish;
+    sub->priority = request.priority;
 
  cleanup:
     UA_ModifySubscriptionResponse_deleteMembers(&response);
@@ -114,7 +114,7 @@ UA_Client_Subscriptions_addMonitoredItems(UA_Client *client, UA_UInt32 subscript
     UA_UInt32 i;
     UA_Client_Subscription *sub;
     LIST_FOREACH(sub, &client->subscriptions, listEntry) {
-        if(sub->SubscriptionID == subscriptionId)
+        if(sub->subscriptionID == subscriptionId)
             break;
     }
     if(!sub)
@@ -139,7 +139,7 @@ UA_Client_Subscriptions_addMonitoredItems(UA_Client *client, UA_UInt32 subscript
         } else {
             items[i].requestedParameters.clientHandle = ++(client->monitoredItemHandles);
         }
-        items[i].requestedParameters.samplingInterval = sub->PublishingInterval;
+        items[i].requestedParameters.samplingInterval = sub->publishingInterval;
         items[i].requestedParameters.discardOldest = true;
         items[i].requestedParameters.queueSize = 1;
     }
@@ -169,19 +169,19 @@ UA_Client_Subscriptions_addMonitoredItems(UA_Client *client, UA_UInt32 subscript
     /* Create the handler */
     for (i = 0; i < nodeCnt; i++) {
         UA_Client_MonitoredItem *newMon = UA_malloc(sizeof(UA_Client_MonitoredItem));
-        newMon->MonitoringMode = UA_MONITORINGMODE_REPORTING;
+        newMon->monitoringMode = UA_MONITORINGMODE_REPORTING;
         UA_NodeId_copy(&nodeIds[i], &newMon->monitoredNodeId);
-        newMon->AttributeID = attributeID;
-        newMon->ClientHandle = items[i].requestedParameters.clientHandle;
-        newMon->SamplingInterval = sub->PublishingInterval;
-        newMon->QueueSize = 1;
-        newMon->DiscardOldest = true;
+        newMon->attributeID = attributeID;
+        newMon->clientHandle = items[i].requestedParameters.clientHandle;
+        newMon->samplingInterval = sub->publishingInterval;
+        newMon->queueSize = 1;
+        newMon->discardOldest = true;
         newMon->handler = handlingFunction;
         newMon->handlerContext = handlingContext;
-        newMon->MonitoredItemId = response.results[i].monitoredItemId;
-        LIST_INSERT_HEAD(&sub->MonitoredItems, newMon, listEntry);
-        newMonitoredItemIds[i] = newMon->MonitoredItemId;
-        clientHandles[i] = newMon->ClientHandle;
+        newMon->monitoredItemId = response.results[i].monitoredItemId;
+        LIST_INSERT_HEAD(&sub->monitoredItems, newMon, listEntry);
+        newMonitoredItemIds[i] = newMon->monitoredItemId;
+        clientHandles[i] = newMon->clientHandle;
     }
 
     UA_LOG_DEBUG(client->config.logger, UA_LOGCATEGORY_CLIENT,
@@ -200,7 +200,7 @@ UA_Client_Subscriptions_removeMonitoredItems(UA_Client *client,
 {
     UA_Client_Subscription *sub;
     LIST_FOREACH(sub, &client->subscriptions, listEntry) {
-        if(sub->SubscriptionID == subscriptionId)
+        if(sub->subscriptionID == subscriptionId)
             break;
     }
     if(!sub)
@@ -209,8 +209,8 @@ UA_Client_Subscriptions_removeMonitoredItems(UA_Client *client,
     UA_Client_MonitoredItem *mon;
     UA_UInt32 newCnt = 0;
     for (UA_UInt32 i = 0; i < nodeCnt; i++) {
-        LIST_FOREACH(mon, &sub->MonitoredItems, listEntry) {
-            if(mon->MonitoredItemId == monitoredItemIds[i]) {
+        LIST_FOREACH(mon, &sub->monitoredItems, listEntry) {
+            if(mon->monitoredItemId == monitoredItemIds[i]) {
                 monitoredItemIds[newCnt++] = monitoredItemIds[i];
                 break;
             }
@@ -220,7 +220,7 @@ UA_Client_Subscriptions_removeMonitoredItems(UA_Client *client,
     /* remove the monitoreditem remotely */
     UA_DeleteMonitoredItemsRequest request;
     UA_DeleteMonitoredItemsRequest_init(&request);
-    request.subscriptionId = sub->SubscriptionID;
+    request.subscriptionId = sub->subscriptionID;
     request.monitoredItemIdsSize = newCnt;
     request.monitoredItemIds = monitoredItemIds;
     UA_DeleteMonitoredItemsResponse response = UA_Client_Service_deleteMonitoredItems(client, request);
@@ -228,8 +228,8 @@ UA_Client_Subscriptions_removeMonitoredItems(UA_Client *client,
     UA_StatusCode retval = response.responseHeader.serviceResult;
     if (retval == UA_STATUSCODE_GOOD && response.resultsSize == newCnt) {
         for (UA_UInt32 i = 0; i < newCnt; i++) {
-            LIST_FOREACH_SAFE(mon, &sub->MonitoredItems, listEntry, tempMon) {
-                if (mon->MonitoredItemId == monitoredItemIds[i]) {
+            LIST_FOREACH_SAFE(mon, &sub->monitoredItems, listEntry, tempMon) {
+                if (mon->monitoredItemId == monitoredItemIds[i]) {
                     LIST_REMOVE(mon, listEntry);
                     UA_NodeId_deleteMembers(&mon->monitoredNodeId);
                     UA_free(mon);
@@ -267,7 +267,7 @@ bool clearSubscription(UA_Client* client)
     size_t i = 0;
     UA_UInt32* subScriptions = (UA_UInt32*)UA_Array_new(count, &UA_TYPES[UA_TYPES_UINT32]);
     LIST_FOREACH(sub, &client->subscriptions, listEntry) {
-        subScriptions[i++] = sub->SubscriptionID;
+        subScriptions[i++] = sub->subscriptionID;
     }
     for (i = 0; i < count; i++) {
         UA_Client_Subscriptions_remove(client, subScriptions[i]);

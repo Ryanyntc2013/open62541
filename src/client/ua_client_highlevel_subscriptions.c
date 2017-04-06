@@ -272,7 +272,7 @@ UA_Client_processPublishResponse(UA_Client *client, UA_PublishRequest *request,
 
         UA_DataChangeNotification *dataChangeNotification = (UA_DataChangeNotification *)msg->notificationData[k].content.decoded.data;
         if (sub->subcriptionHandler) {
-            sub->subcriptionHandler(sub->SubscriptionID, dataChangeNotification, sub->subscriptionHandlerContext);
+            sub->subcriptionHandler(sub->subscriptionID, dataChangeNotification, sub->subscriptionHandlerContext);
         } else {
 			for(size_t j = 0; j < dataChangeNotification->monitoredItemsSize; ++j) {
 				UA_MonitoredItemNotification *mitemNot = &dataChangeNotification->monitoredItems[j];
