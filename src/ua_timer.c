@@ -70,7 +70,7 @@ dequeueChange(UA_RepeatedJobsList *rjl) {
 
 /* Adding repeated jobs: Add an entry with the "nextTime" timestamp in the
  * future. This will be picked up in the next iteration and inserted at the
- * correct place. So that the next execution takes place ät "nextTime". */
+ * correct place. So that the next execution takes place at "nextTime". */
 UA_StatusCode
 UA_RepeatedJobsList_addRepeatedJob(UA_RepeatedJobsList *rjl, const UA_Job job,
                                    const UA_UInt32 interval, UA_Guid *jobId) {
